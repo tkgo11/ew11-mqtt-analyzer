@@ -16,8 +16,9 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    // fresh demo DB every run; demo-speed 0.15 => ~7x faster packet stream
-    command: `sh -c 'rm -rf /tmp/ew11-e2e && exec ../.venv/bin/python -m ew11_analyzer --demo --port ${PORT} --data-dir /tmp/ew11-e2e --demo-speed 0.15'`,
+    // Fresh demo DB every run; demo-speed 0.15 => ~7x faster packet stream.
+    // Prefer repo venv (local dev); fall back to system python (CI pip install).
+    command: `sh -c 'rm -rf /tmp/ew11-e2e; PY=../.venv/bin/python; [ -x "$PY" ] || PY=python3; exec "$PY" -m ew11_analyzer --demo --port ${PORT} --data-dir /tmp/ew11-e2e --demo-speed 0.15'`,
     url: `${BASE}/api/status`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
