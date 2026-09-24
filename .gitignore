@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.spec.bak
+
+# Node / frontend
+node_modules/
+frontend/dist/
+e2e/node_modules/
+
+# Playwright
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+.playwright/
+
+# PyInstaller
+*.manifest
+
+# Runtime data
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log

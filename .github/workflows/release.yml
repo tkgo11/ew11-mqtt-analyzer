@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci && npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  binaries:
+    name: PyInstaller ${{ matrix.os }}
+    needs: build-frontend
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+      - name: Install
+        run: pip install -e . pyinstaller
+      - name: Build binary
+        run: pyinstaller ew11-analyzer.spec --clean --noconfirm
+      - name: Package (zip)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cd dist
+          mv ew11-analyzer "ew11-analyzer-${{ matrix.os }}"
+          zip -r "../ew11-analyzer-${{ matrix.os }}.zip" "ew11-analyzer-${{ matrix.os }}"
+      - name: Package (tar.gz)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          cd dist
+          mv ew11-analyzer "ew11-analyzer-${{ matrix.os }}"
+          tar -czf "../ew11-analyzer-${{ matrix.os }}.tar.gz" "ew11-analyzer-${{ matrix.os }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}
+          path: |
+            ew11-analyzer-*.tar.gz
+            ew11-analyzer-*.zip
+
+  release:
+    name: GitHub Release
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: artifacts
+          merge-multiple: true
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
