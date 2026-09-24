@@ -142,7 +142,8 @@ def _analysis_routes(app: FastAPI, service: AnalyzerService) -> None:
         )
 
     @app.post("/api/ai/analyze")
-    async def ai_analyze(body: AiAnalyzeIn) -> Response:
+    async def ai_analyze(body: AiAnalyzeIn | None = None) -> Response:
+        body = body or AiAnalyzeIn()
         cfg = service.cfg.ai
         override = AiConfig(
             provider=body.provider or cfg.provider,
