@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import stat
@@ -77,7 +78,10 @@ def save_config(data_dir: Path, cfg: AppConfig) -> None:
         "demo": cfg.demo,
     }
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.chmod(stat.S_IRUSR | stat.S_IWUSR)  # contains API key
+    # contains the API key; filesystems without POSIX mode bits (FAT32, Windows
+    # ACLs) raise OSError — best-effort hardening only
+    with contextlib.suppress(OSError):
+        tmp.chmod(stat.S_IRUSR | stat.S_IWUSR)
     tmp.replace(path)
 
 

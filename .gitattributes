@@ -1,0 +1,7 @@
+# Normalize line endings; keep Windows scripts CRLF and POSIX scripts LF
+# regardless of the contributor's core.autocrlf setting.
+* text=auto
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh  text eol=lf

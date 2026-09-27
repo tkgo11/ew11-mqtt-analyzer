@@ -13,8 +13,13 @@ EW11(RS485↔Wi-Fi 변환기)을 통해 월패드에 연결된 상태에서 흐�
 월패드 없이 시뮬레이터로 전체 기능을 체험할 수 있습니다.
 
 ```bash
+# Linux / macOS
 ./run.sh --demo
-# 브라우저에서 http://localhost:8321 열기
+
+# Windows (cmd 또는 PowerShell)
+run.bat --demo
+
+# 브라우저에서 http://localhost:8000 열기
 ```
 
 데모 모드에서는 월패드 시뮬레이터가 주기 상태 패킷을 생성하고, "이벤트 표시" 탭의 데모 버튼으로 버튼 누름을 흉내 낼 수 있습니다.
@@ -25,7 +30,11 @@ EW11(RS485↔Wi-Fi 변환기)을 통해 월패드에 연결된 상태에서 흐�
 2. 실행:
 
 ```bash
+# Linux / macOS
 ./run.sh --host <MQTT 브로커 IP> --port 1883 --topic "ew11/#"
+
+# Windows
+run.bat --host <MQTT 브로커 IP> --port 1883 --topic "ew11/#"
 ```
 
 또는 설정 탭에서 브로커 주소를 입력 후 저장하면 됩니다.
@@ -47,23 +56,29 @@ EW11(RS485↔Wi-Fi 변환기)을 통해 월패드에 연결된 상태에서 흐�
 ## 수동 설치·실행
 
 ```bash
-# 백엔드
+# 백엔드 — Linux/macOS
 python -m venv .venv && .venv/bin/pip install -e '.[dev]'
+
+# 백엔드 — Windows (cmd / PowerShell)
+python -m venv .venv && .venv\Scripts\pip install -e ".[dev]"
 
 # 프론트엔드
 cd frontend && npm ci && npm run build && cd ..
 
-# 실행 (데모)
+# 실행 (데모) — Windows에서는 .venv/bin/python 대신 .venv\Scripts\python
 .venv/bin/python -m ew11_analyzer --demo
 
 # 실행 (실제 MQTT)
 .venv/bin/python -m ew11_analyzer --host 192.168.x.x --topic "ew11/#"
 ```
 
+Windows venv의 파이썬 경로는 `.venv\Scripts\python.exe`입니다 (POSIX의 `.venv/bin/python`과 동일 역할).
+
 ## 테스트
 
 ```bash
 # 백엔드 단위 테스트 + 린트 + 타입체크
+# (Windows에서는 .venv/bin/... 대신 .venv\Scripts\... 경로 사용)
 .venv/bin/pytest tests -q
 .venv/bin/ruff check src tests
 .venv/bin/mypy src
@@ -71,13 +86,13 @@ cd frontend && npm ci && npm run build && cd ..
 # 프론트엔드
 cd frontend && npm test && npm run typecheck && npm run lint && npm run build
 
-# E2E (Playwright — 데모 서버 자동 구동)
+# E2E (Playwright — 데모 서버 자동 구동, Windows 포함)
 cd e2e && npm ci && npx playwright install chromium && npx playwright test
 ```
 
 ## CI/CD
 
-- `.github/workflows/ci.yml`: push/PR마다 백엔드 테스트·린트·타입체크, 프론트엔드 테스트·빌드, Playwright E2E를 실행합니다.
+- `.github/workflows/ci.yml`: push/PR마다 백엔드 테스트·린트·타입체크와 Playwright E2E를 Ubuntu/Windows에서 실행하고, 프론트엔드 테스트·빌드를 실행합니다.
 - `.github/workflows/release.yml`: `v*` 태그 push 시 PyInstaller로 Linux/Windows/macOS 단일 바이너리를 빌드해 GitHub Release에 첨부합니다.
 
 ## 프로젝트 구조

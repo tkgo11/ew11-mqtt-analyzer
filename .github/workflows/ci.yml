@@ -7,8 +7,12 @@ on:
 
 jobs:
   backend:
-    name: Backend (test + lint + typecheck)
-    runs-on: ubuntu-latest
+    name: Backend (test + lint + typecheck) — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,9 +58,13 @@ jobs:
           path: frontend/dist
 
   e2e:
-    name: E2E (Playwright)
-    runs-on: ubuntu-latest
+    name: E2E (Playwright) — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -74,14 +82,19 @@ jobs:
       - name: Install e2e deps
         working-directory: e2e
         run: npm ci
-      - name: Install Playwright browser
+      - name: Install Playwright browser (with system deps)
+        if: runner.os == 'Linux'
         working-directory: e2e
         run: npx playwright install --with-deps chromium
+      - name: Install Playwright browser
+        if: runner.os == 'Windows'
+        working-directory: e2e
+        run: npx playwright install chromium
       - name: Run E2E
         working-directory: e2e
         run: npx playwright test
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.os }}
           path: e2e/playwright-report

@@ -16,9 +16,10 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    // Fresh demo DB every run; demo-speed 0.15 => ~7x faster packet stream.
-    // Prefer repo venv (local dev); fall back to system python (CI pip install).
-    command: `sh -c 'rm -rf /tmp/ew11-e2e; PY=../.venv/bin/python; [ -x "$PY" ] || PY=python3; exec "$PY" -m ew11_analyzer --demo --port ${PORT} --data-dir /tmp/ew11-e2e --demo-speed 0.15'`,
+    // serve.mjs is cross-platform (no POSIX shell, no /tmp): it wipes a fresh
+    // demo DB under os.tmpdir() and prefers the repo venv python.
+    command: "node serve.mjs",
+    env: { E2E_PORT: String(PORT) },
     url: `${BASE}/api/status`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
