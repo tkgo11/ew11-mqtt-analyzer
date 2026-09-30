@@ -20,7 +20,8 @@ export function usePacketStream() {
   const [buffered, setBuffered] = useState(0);
   const pausedRef = useRef(false);
   const bufRef = useRef<PacketDto[]>([]);
-  const dataVersionRef = useRef(0);
+  const connectionGenerationRef = useRef(0);
+  const hydrationGenerationRef = useRef(0);
   pausedRef.current = paused;
 
   useEffect(() => {
@@ -29,8 +30,14 @@ export function usePacketStream() {
     let retry: ReturnType<typeof setTimeout> | undefined;
 
     const connect = () => {
-      ws = new WebSocket(wsUrl());
-      ws.onmessage = (ev) => {
+      const connectionGeneration = ++connectionGenerationRef.current;
+      const hydrationGeneration = ++hydrationGenerationRef.current;
+      let livePacketsForThisConnection: PacketDto[] = [];
+      let hydrated = false;
+      const socket = new WebSocket(wsUrl());
+      ws = socket;
+      socket.onmessage = (ev) => {
+        if (dead || connectionGeneration !== connectionGenerationRef.current) return;
         let parsed: unknown;
         try {
           parsed = JSON.parse(ev.data);
@@ -40,6 +47,9 @@ export function usePacketStream() {
         if (typeof parsed !== "object" || parsed === null || !("type" in parsed)) return;
         const msg = parsed as WsMsg;
         if (msg.type === "packet" && msg.data && typeof msg.data.seq === "number") {
+          if (!hydrated) {
+            livePacketsForThisConnection = mergePackets(livePacketsForThisConnection, [msg.data]);
+          }
           if (pausedRef.current) {
             bufRef.current.push(msg.data);
             if (bufRef.current.length > MAX_ROWS) bufRef.current.splice(0, bufRef.current.length - MAX_ROWS);
@@ -50,27 +60,36 @@ export function usePacketStream() {
         } else if (msg.type === "status" && msg.data && typeof msg.data.status === "string") {
           setConnStatus(msg.data.status);
         } else if (msg.type === "clear") {
-          dataVersionRef.current += 1;
+          hydrationGenerationRef.current += 1;
           setPackets([]);
           bufRef.current = [];
           setBuffered(0);
         }
       };
-      ws.onclose = () => {
+      socket.onclose = () => {
+        if (dead || connectionGeneration !== connectionGenerationRef.current) return;
+        connectionGenerationRef.current += 1;
+        hydrationGenerationRef.current += 1;
         setConnStatus("disconnected");
         if (!dead) retry = setTimeout(connect, 2000);
       };
-      ws.onerror = () => ws?.close();
+      socket.onerror = () => socket.close();
+      api.packets(MAX_ROWS).then(({ packets: stored }) => {
+        if (
+          !dead &&
+          connectionGeneration === connectionGenerationRef.current &&
+          hydrationGeneration === hydrationGenerationRef.current
+        ) {
+          hydrated = true;
+          setPackets(() => mergePackets(stored, livePacketsForThisConnection));
+        }
+      }).catch(() => {});
     };
     connect();
-    const loadVersion = dataVersionRef.current;
-    api.packets(MAX_ROWS).then(({ packets: stored }) => {
-      if (!dead && dataVersionRef.current === loadVersion) {
-        setPackets((live) => mergePackets(stored, live));
-      }
-    }).catch(() => {});
     return () => {
       dead = true;
+      connectionGenerationRef.current += 1;
+      hydrationGenerationRef.current += 1;
       if (retry) clearTimeout(retry);
       ws?.close();
     };
@@ -78,15 +97,14 @@ export function usePacketStream() {
 
   const resume = useCallback(() => {
     setPaused(false);
-    if (bufRef.current.length) {
-      setPackets((prev) => mergePackets(prev, bufRef.current));
-      bufRef.current = [];
-    }
+    const bufferedPackets = bufRef.current;
+    bufRef.current = [];
+    if (bufferedPackets.length) setPackets((prev) => mergePackets(prev, bufferedPackets));
     setBuffered(0);
   }, []);
 
   const clear = useCallback(() => {
-    dataVersionRef.current += 1;
+    hydrationGenerationRef.current += 1;
     setPackets([]);
     bufRef.current = [];
     setBuffered(0);

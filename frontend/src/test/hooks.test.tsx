@@ -39,6 +39,7 @@ describe("usePacketStream", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("loads stored packets and deduplicates live overlap", async () => {
@@ -54,8 +55,55 @@ describe("usePacketStream", () => {
     expect(result.current.packets.map((p) => p.seq)).toEqual([3, 2, 1]);
   });
 
-  it("tracks paused packets, tolerates malformed messages, and handles server clears", async () => {
+  it("rehydrates history after reconnect and removes stale rows", async () => {
+    let resolveInitialHistory!: (value: { packets: PacketDto[] }) => void;
+    const initialHistory = new Promise<{ packets: PacketDto[] }>((resolve) => {
+      resolveInitialHistory = resolve;
+    });
+    const packets = vi.spyOn(api, "packets")
+      .mockReturnValueOnce(initialHistory)
+      .mockResolvedValueOnce({ packets: [] });
+    const { result } = renderHook(() => usePacketStream());
+
+    await waitFor(() => expect(api.packets).toHaveBeenCalledTimes(1));
+    act(() => MockWebSocket.instance.emit({ type: "packet", data: packet(1) }));
+    expect(result.current.packets.map((p) => p.seq)).toEqual([1]);
+    vi.useFakeTimers();
+    act(() => MockWebSocket.instance.onclose?.());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(packets).toHaveBeenCalledTimes(2);
+    expect(result.current.packets).toEqual([]);
+    await act(async () => {
+      resolveInitialHistory({ packets: [packet(1)] });
+      await initialHistory;
+    });
+    expect(result.current.packets).toEqual([]);
+  });
+
+  it("keeps buffered packets when resuming", async () => {
     vi.spyOn(api, "packets").mockResolvedValue({ packets: [] });
+    const { result } = renderHook(() => usePacketStream());
+
+    await waitFor(() => expect(api.packets).toHaveBeenCalled());
+    act(() => result.current.setPaused(true));
+    act(() => MockWebSocket.instance.emit({ type: "packet", data: packet(1) }));
+    expect(result.current.buffered).toBe(1);
+
+    act(() => result.current.resume());
+
+    expect(result.current.packets.map((p) => p.seq)).toEqual([1]);
+    expect(result.current.buffered).toBe(0);
+  });
+
+  it("tracks paused packets, tolerates malformed messages, and handles server clears", async () => {
+    let resolveHistory!: (value: { packets: PacketDto[] }) => void;
+    const history = new Promise<{ packets: PacketDto[] }>((resolve) => {
+      resolveHistory = resolve;
+    });
+    vi.spyOn(api, "packets").mockReturnValue(history);
     const { result } = renderHook(() => usePacketStream());
     await waitFor(() => expect(api.packets).toHaveBeenCalled());
 
@@ -69,6 +117,11 @@ describe("usePacketStream", () => {
 
     act(() => MockWebSocket.instance.emit({ type: "clear", data: {} }));
     expect(result.current.buffered).toBe(0);
+    expect(result.current.packets).toEqual([]);
+    await act(async () => {
+      resolveHistory({ packets: [packet(2)] });
+      await history;
+    });
     expect(result.current.packets).toEqual([]);
   });
 });
