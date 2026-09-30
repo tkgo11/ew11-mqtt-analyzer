@@ -10,12 +10,12 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from .ai import AiConfig
 from .config import sanitized_config
@@ -23,26 +23,66 @@ from .pipeline import AnalyzerService
 
 
 class MarkerIn(BaseModel):
-    label: str = ""
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(default="", max_length=200)
 
 
 class DemoEventIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     kind: str
 
 
 class AiAnalyzeIn(BaseModel):
-    provider: str | None = None
-    base_url: str | None = None
-    api_key: str | None = None
-    model: str | None = None
-    max_tokens: int | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["openai", "anthropic"] | None = None
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    api_key: str | None = Field(default=None, max_length=4096)
+    model: str | None = Field(default=None, min_length=1, max_length=256)
+    max_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
     save: bool = False
 
 
+class MqttConfigIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host: str | None = Field(default=None, min_length=1, max_length=253)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    username: str | None = Field(default=None, max_length=512)
+    password: str | None = Field(default=None, max_length=4096)
+    topic: str | None = Field(default=None, min_length=1, max_length=1024)
+    tls: bool | None = None
+    client_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class AnalysisConfigIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prefix_len: int | None = Field(default=None, ge=1, le=32)
+    event_pre: float | None = Field(default=None, ge=0, le=3600)
+    event_post: float | None = Field(default=None, ge=0, le=3600)
+    max_packets: int | None = Field(default=None, ge=100, le=10_000_000)
+    demo_speed: float | None = Field(default=None, ge=0.05, le=100)
+
+
+class AiConfigIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["openai", "anthropic"] | None = None
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    api_key: str | None = Field(default=None, max_length=4096)
+    model: str | None = Field(default=None, min_length=1, max_length=256)
+    max_tokens: int | None = Field(default=None, ge=1, le=1_000_000)
+
+
 class ConfigIn(BaseModel):
-    mqtt: dict[str, Any] | None = None
-    analysis: dict[str, Any] | None = None
-    ai: dict[str, Any] | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    mqtt: MqttConfigIn | None = None
+    analysis: AnalysisConfigIn | None = None
+    ai: AiConfigIn | None = None
     demo: bool | None = None
 
 
@@ -73,15 +113,15 @@ def _packet_routes(app: FastAPI, service: AnalyzerService) -> None:
 
     @app.get("/api/packets")
     async def packets(
-        limit: int = Query(300, le=2000),
-        before_seq: int | None = None,
+        limit: int = Query(300, ge=1, le=2000),
+        before_seq: int | None = Query(default=None, ge=1),
         topic: str | None = None,
     ) -> dict[str, Any]:
         return {"packets": service.recent_packets(limit=limit, before_seq=before_seq, topic=topic)}
 
     @app.post("/api/packets/clear")
     async def clear_packets() -> dict[str, Any]:
-        service.storage.clear_packets()
+        service.clear_packets()
         return {"ok": True}
 
 
@@ -113,9 +153,9 @@ def _marker_routes(app: FastAPI, service: AnalyzerService) -> None:
 def _analysis_routes(app: FastAPI, service: AnalyzerService) -> None:
     @app.get("/api/analysis")
     async def analysis(
-        prefix_len: int | None = None,
-        event_pre: float | None = None,
-        event_post: float | None = None,
+        prefix_len: int | None = Query(default=None, ge=1, le=32),
+        event_pre: float | None = Query(default=None, ge=0, le=3600),
+        event_post: float | None = Query(default=None, ge=0, le=3600),
     ) -> dict[str, Any]:
         result = await asyncio.to_thread(service.analyze, prefix_len, event_pre, event_post)
         return result.to_dict()
@@ -172,10 +212,9 @@ def _config_routes(app: FastAPI, service: AnalyzerService) -> None:
         cfg = service.cfg
         for section_name, section in (("mqtt", cfg.mqtt), ("analysis", cfg.analysis), ("ai", cfg.ai)):
             values = getattr(body, section_name)
-            if values:
-                for k, v in values.items():
-                    if hasattr(section, k):
-                        setattr(section, k, v)
+            if values is not None:
+                for k, v in values.model_dump(exclude_none=True).items():
+                    setattr(section, k, v)
         if body.demo is not None:
             cfg.demo = body.demo
         service.update_config(cfg)

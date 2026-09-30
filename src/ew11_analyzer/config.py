@@ -44,7 +44,59 @@ class AppConfig:
 def _update(obj: Any, values: dict[str, Any]) -> None:
     for k, v in values.items():
         if hasattr(obj, k) and not k.startswith("_"):
-            setattr(obj, k, v)
+            current = getattr(obj, k)
+            if isinstance(current, bool):
+                valid = isinstance(v, bool)
+            elif isinstance(current, int):
+                valid = isinstance(v, int) and not isinstance(v, bool)
+            elif isinstance(current, float):
+                valid = isinstance(v, int | float) and not isinstance(v, bool)
+            else:
+                valid = isinstance(v, type(current))
+            if valid:
+                setattr(obj, k, float(v) if isinstance(current, float) else v)
+
+
+def _normalize_mqtt(cfg: MqttConfig, defaults: MqttConfig) -> None:
+    if not cfg.host:
+        cfg.host = defaults.host
+    if not 1 <= cfg.port <= 65535:
+        cfg.port = defaults.port
+    if not cfg.topic:
+        cfg.topic = defaults.topic
+    if not cfg.client_id:
+        cfg.client_id = defaults.client_id
+
+
+def _normalize_analysis(cfg: AnalysisConfig, defaults: AnalysisConfig) -> None:
+    if not 1 <= cfg.prefix_len <= 32:
+        cfg.prefix_len = defaults.prefix_len
+    if not 0 <= cfg.event_pre <= 3600:
+        cfg.event_pre = defaults.event_pre
+    if not 0 <= cfg.event_post <= 3600:
+        cfg.event_post = defaults.event_post
+    if not 100 <= cfg.max_packets <= 10_000_000:
+        cfg.max_packets = defaults.max_packets
+    if not 0.05 <= cfg.demo_speed <= 100:
+        cfg.demo_speed = defaults.demo_speed
+
+
+def _normalize_ai(cfg: AiConfig, defaults: AiConfig) -> None:
+    if cfg.provider not in {"openai", "anthropic"}:
+        cfg.provider = defaults.provider
+    if not cfg.base_url:
+        cfg.base_url = defaults.base_url
+    if not cfg.model:
+        cfg.model = defaults.model
+    if not 1 <= cfg.max_tokens <= 1_000_000:
+        cfg.max_tokens = defaults.max_tokens
+
+
+def _normalize(cfg: AppConfig) -> None:
+    defaults = AppConfig()
+    _normalize_mqtt(cfg.mqtt, defaults.mqtt)
+    _normalize_analysis(cfg.analysis, defaults.analysis)
+    _normalize_ai(cfg.ai, defaults.ai)
 
 
 def load_config(data_dir: Path) -> AppConfig:
@@ -53,15 +105,18 @@ def load_config(data_dir: Path) -> AppConfig:
     if path.exists():
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(raw.get("mqtt"), dict):
-                _update(cfg.mqtt, raw["mqtt"])
-            if isinstance(raw.get("analysis"), dict):
-                _update(cfg.analysis, raw["analysis"])
-            if isinstance(raw.get("ai"), dict):
-                _update(cfg.ai, raw["ai"])
-            cfg.demo = bool(raw.get("demo", cfg.demo))
+            if isinstance(raw, dict):
+                if isinstance(raw.get("mqtt"), dict):
+                    _update(cfg.mqtt, raw["mqtt"])
+                if isinstance(raw.get("analysis"), dict):
+                    _update(cfg.analysis, raw["analysis"])
+                if isinstance(raw.get("ai"), dict):
+                    _update(cfg.ai, raw["ai"])
+                if isinstance(raw.get("demo"), bool):
+                    cfg.demo = raw["demo"]
         except (json.JSONDecodeError, OSError):
             pass
+    _normalize(cfg)
     if os.environ.get("EW11_DEMO"):
         cfg.demo = True
     return cfg

@@ -57,3 +57,28 @@ def test_persistence_across_open(tmp_path):
     assert st2.count() == 1
     assert st2.max_seq() == 1
     st2.close()
+
+
+def test_clear_packets_discards_unflushed_packets(tmp_path):
+    st = Storage(tmp_path / "t.db")
+    st.add_packet(mk_packet(1.0, b"\xaa\xbb", seq=1))
+
+    st.clear_packets()
+    st.flush()
+
+    assert st.count() == 0
+    assert st.query() == []
+    st.close()
+
+
+def test_lowering_max_packets_prunes_existing_rows(tmp_path):
+    st = Storage(tmp_path / "t.db", max_packets=1000)
+    for i in range(300):
+        st.add_packet(mk_packet(1000.0 + i, b"\x01", seq=i + 1))
+    st.flush()
+
+    st.set_max_packets(100)
+
+    assert st.count() == 100
+    assert st.query()[0].seq == 201
+    st.close()

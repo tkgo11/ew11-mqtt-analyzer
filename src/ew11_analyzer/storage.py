@@ -152,8 +152,15 @@ class Storage:
 
     def clear_packets(self) -> None:
         with self._lock:
+            self._buf.clear()
             self._conn.execute("DELETE FROM packets")
             self._conn.commit()
+
+    def set_max_packets(self, max_packets: int) -> None:
+        with self._lock:
+            self.max_packets = max_packets
+            self._flush_locked()
+            self._prune_locked()
 
     # ---- markers -----------------------------------------------------------
     def add_marker(self, ts: float, label: str) -> Marker:

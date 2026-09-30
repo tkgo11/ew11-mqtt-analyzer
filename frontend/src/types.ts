@@ -134,4 +134,5 @@ export interface ConfigDto {
 export type WsMsg =
   | { type: "packet"; data: PacketDto }
   | { type: "status"; data: { status: string } }
-  | { type: "marker"; data: MarkerDto };
+  | { type: "marker"; data: MarkerDto }
+  | { type: "clear"; data: Record<string, never> };
