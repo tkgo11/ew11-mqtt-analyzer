@@ -47,6 +47,25 @@ def test_ingest_and_query(client, svc):
     assert pkts[0]["hex"] == "AA BB CC DD"
 
 
+def test_query_flushes_recent_packets(client, svc):
+    _ingest(svc, b"AA BB")
+
+    assert client.get("/api/status").json()["total_packets"] == 1
+    assert client.get("/api/packets").json()["packets"][0]["hex"] == "AA BB"
+
+
+def test_clear_discards_buffered_packets_and_notifies_subscribers(svc):
+    with TestClient(create_app(svc)) as c, c.websocket_connect("/ws") as ws:
+        ws.receive_json()
+        _ingest(svc, b"AA BB")
+        ws.receive_json()
+
+        assert c.post("/api/packets/clear").json()["ok"]
+        assert ws.receive_json()["type"] == "clear"
+        svc.storage.flush()
+        assert c.get("/api/status").json()["total_packets"] == 0
+
+
 def test_markers_crud(client, svc):
     r = client.post("/api/markers", json={"label": "거실 조명"})
     assert r.status_code == 200
@@ -95,6 +114,26 @@ def test_config_roundtrip(client):
         json={"mqtt": {"host": "192.168.0.10", "port": 2883}, "analysis": {"prefix_len": 4}},
     )
     assert r2.json()["config"]["mqtt"]["host"] == "192.168.0.10"
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/api/packets?limit=0", None),
+        ("/api/analysis?prefix_len=0", None),
+        ("/api/analysis?event_pre=-1", None),
+        ("/api/config", {"mqtt": {"port": 70000}}),
+        ("/api/config", {"analysis": {"max_packets": 1}}),
+        ("/api/config", {"unknown": {}}),
+        ("/api/ai/analyze", {"provider": "unsupported"}),
+    ],
+)
+def test_invalid_inputs_are_rejected(client, path, body):
+    response = client.put(path, json=body) if path == "/api/config" else (
+        client.post(path, json=body) if path == "/api/ai/analyze" else client.get(path)
+    )
+
+    assert response.status_code == 422
 
 
 def test_demo_event_requires_demo_mode(client):

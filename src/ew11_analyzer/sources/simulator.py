@@ -70,6 +70,8 @@ class SimulatedWallpad:
 
     # ------------------------------------------------------------------ API
     async def start(self, emit: EmitFn, on_status: StatusFn) -> None:
+        if self._running:
+            return
         self._emit = emit
         self._on_status = on_status
         self._running = True
@@ -85,9 +87,14 @@ class SimulatedWallpad:
 
     async def stop(self) -> None:
         self._running = False
-        for t in self._tasks:
+        tasks = self._tasks
+        self._tasks = []
+        for t in tasks:
             t.cancel()
-        self._tasks.clear()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._emit = None
+        self._on_status = None
 
     async def inject_event(self, kind: str) -> int:
         """Emit a command (+ack) as if a physical button was pressed."""

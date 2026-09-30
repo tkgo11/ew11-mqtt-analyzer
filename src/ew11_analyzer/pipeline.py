@@ -45,14 +45,21 @@ class AnalyzerService:
 
     # ------------------------------------------------------------- lifecycle
     async def start(self) -> None:
+        if self._flush_task is not None:
+            return
         self._started_at = time.time()
         await self._start_source()
         self._flush_task = asyncio.create_task(self._flush_loop())
 
     async def stop(self) -> None:
-        if self._flush_task:
-            self._flush_task.cancel()
+        flush_task = self._flush_task
+        self._flush_task = None
+        if flush_task:
+            flush_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await flush_task
         await self._stop_source()
+        self._set_status("stopped")
         self.storage.close()
 
     async def _start_source(self) -> None:
@@ -111,6 +118,7 @@ class AnalyzerService:
 
     # ----------------------------------------------------------------- views
     def status(self) -> dict[str, Any]:
+        self.storage.flush()
         now = time.time()
         recent = sum(1 for t in self._rx_ts if now - t <= RATE_WINDOW_S)
         return {
@@ -129,8 +137,14 @@ class AnalyzerService:
     def recent_packets(
         self, limit: int = 300, before_seq: int | None = None, topic: str | None = None
     ) -> list[dict[str, Any]]:
+        self.storage.flush()
         pkts = self.storage.query(limit=limit, before_seq=before_seq, topic=topic, newest_first=True)
         return [p.to_dict() for p in pkts]
+
+    def clear_packets(self) -> None:
+        self.storage.clear_packets()
+        self._rx_ts.clear()
+        self._broadcast({"type": "clear", "data": {}})
 
     # --------------------------------------------------------------- markers
     def add_marker(self, label: str) -> Marker:
@@ -184,4 +198,5 @@ class AnalyzerService:
 
     def update_config(self, cfg: AppConfig) -> None:
         self.cfg = cfg
+        self.storage.set_max_packets(cfg.analysis.max_packets)
         save_config(self.data_dir, cfg)
