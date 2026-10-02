@@ -120,9 +120,11 @@ def _window_stats(
     if not windows:
         return 0, count, None
     event_time = min(sum(b - a for a, b in windows), duration)
-    base_time = max(duration - event_time, 1e-9)
+    base_time = duration - event_time
     event_count = _count_in_windows(ts, windows)
     baseline_count = count - event_count
+    if event_time <= 0 or base_time <= 0:
+        return event_count, baseline_count, None
     out_rate = baseline_count / base_time
     if event_count > 0 and out_rate <= 0:
         return event_count, baseline_count, 99.0
@@ -141,10 +143,10 @@ def _decide(
     event_count: int,
 ) -> tuple[str, float]:
     verdict, confidence = "MIXED", 0.45
-    if count < 3:
+    if count < 3 or (has_markers and event_lift is None):
         # a packet that only ever appears inside marker windows is a command
         # candidate even with a single observation
-        if has_markers and event_count > 0 and base_frac == 0.0:
+        if has_markers and event_lift is not None and event_count > 0 and base_frac == 0.0:
             verdict, confidence = "EVENT", min(0.7, 0.35 + 0.15 * event_count)
         else:
             verdict, confidence = "UNKNOWN", 0.2
@@ -183,11 +185,15 @@ def classify_family(
 ) -> FamilyVerdict:
     ts = sorted(timestamps)
     count = len(ts)
-    duration = max(end - start, 1e-9)
-    rate_per_min = count / duration * 60.0
+    duration = max(end - start, 0.0)
+    rate_per_min = count / duration * 60.0 if duration > 0 else 0.0
 
     mean_interval, cv, periodicity = _periodicity(ts)
-    windows = _merged_windows(markers, pre, post)
+    windows = [
+        (max(a, start), min(b, end))
+        for a, b in _merged_windows(markers, pre, post)
+        if a <= end and b >= start
+    ]
     event_count, baseline_count, event_lift = _window_stats(ts, windows, duration)
     marker_ids = [m.id for m in markers if _count_in_windows(ts, [(m.ts - pre, m.ts + post)]) > 0]
 
@@ -197,7 +203,7 @@ def classify_family(
         base_frac=baseline_count / count if count else 0.0,
         event_lift=event_lift,
         periodicity=periodicity,
-        has_markers=bool(markers),
+        has_markers=bool(windows),
         event_count=event_count,
     )
 

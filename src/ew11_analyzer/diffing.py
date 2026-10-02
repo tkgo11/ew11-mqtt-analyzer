@@ -48,17 +48,17 @@ class MarkerDiff:
         }
 
 
-def _positions_changed(in_samples: list[bytes], out_samples: list[bytes]) -> list[int]:
+def _byte_values(packets: list[Packet]) -> list[set[int]]:
+    values: list[set[int]] = [set() for _ in packets[0].payload] if packets else []
+    for packet in packets:
+        for i, value in enumerate(packet.payload):
+            values[i].add(value)
+    return values
+
+
+def _positions_changed(packets: list[Packet], baseline: list[set[int]]) -> list[int]:
     """Byte positions where any in-window value leaves the baseline value set."""
-    if not out_samples:
-        return []
-    n = len(out_samples[0])
-    changed: list[int] = []
-    for i in range(n):
-        baseline_vals = {s[i] for s in out_samples}
-        if any(s[i] not in baseline_vals for s in in_samples):
-            changed.append(i)
-    return changed
+    return [i for i, values in enumerate(baseline) if any(p.payload[i] not in values for p in packets)]
 
 
 def diff_around_markers(
@@ -68,7 +68,6 @@ def diff_around_markers(
     pre: float = 0.3,
     post: float = 1.5,
     prefix_len: int = 3,
-    max_samples: int = 64,
 ) -> list[MarkerDiff]:
     windows = _merged_windows(markers, pre, post)
 
@@ -82,6 +81,7 @@ def diff_around_markers(
         else:
             baseline_by_sig.setdefault(sig, []).append(p)
 
+    baseline_values = {sig: _byte_values(pkts) for sig, pkts in baseline_by_sig.items()}
     diffs: list[MarkerDiff] = []
     for m in markers:
         md = MarkerDiff(marker=m)
@@ -91,9 +91,7 @@ def diff_around_markers(
                 per_sig.setdefault(signature(p.payload, prefix_len), []).append(p)
         for sig, pkts in sorted(per_sig.items(), key=lambda kv: -len(kv[1])):
             base = baseline_by_sig.get(sig, [])
-            in_samples = [p.payload for p in pkts[:max_samples]]
-            out_samples = [p.payload for p in base[:max_samples]]
-            changed = _positions_changed(in_samples, out_samples)
+            changed = _positions_changed(pkts, baseline_values.get(sig, []))
             novel = len(base) == 0
             # keep the interesting ones on top: novel > changed > rest
             md.hits.append(

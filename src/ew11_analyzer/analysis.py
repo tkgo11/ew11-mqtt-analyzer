@@ -74,10 +74,6 @@ def run_analysis(
 ) -> AnalysisResult:
     start = min((p.ts for p in packets), default=0.0)
     end = max((p.ts for p in packets), default=0.0)
-    for m in markers:
-        start = min(start, m.ts)
-        end = max(end, m.ts)
-
     fams = group_families(packets, prefix_len)
     # analyze the busiest families first; cap to keep the report usable
     top = sorted(fams.items(), key=lambda kv: -len(kv[1]))[:max_families]
@@ -136,7 +132,12 @@ def run_analysis(
             f"패밀리가 {len(fams)}개라 상위 {max_families}개만 분석했습니다. "
             "토픽 필터로 범위를 좁히면 더 정확합니다."
         )
-    if not any(f.verdict["verdict"] == "EVENT" for f in result.families) and markers:
+    if any(f.verdict["event_count"] > 0 and f.verdict["event_lift"] is None for f in result.families):
+        result.notes.append(
+            "이벤트 구간과 평상시 구간의 수집 시간이 부족해 빈도를 비교할 수 없습니다. "
+            "버튼을 누르지 않은 상태에서 더 수집하거나 이벤트 윈도우를 줄여 보세요."
+        )
+    elif not any(f.verdict["verdict"] == "EVENT" for f in result.families) and markers:
         result.notes.append(
             "이벤트로 분류된 패밀리가 없습니다. 마커 시각과 패킷 도착 시각의 오차를 줄이려면 "
             "버튼을 누르는 순간과 동시에 표시하거나, 설정의 이벤트 윈도우를 늘려 보세요."
