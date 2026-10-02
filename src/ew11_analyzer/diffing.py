@@ -15,6 +15,8 @@ from .classify import Marker, _merged_windows
 from .families import signature
 from .packets import Packet
 
+MAX_PREVIEW_IN = 6
+
 
 @dataclass
 class FamilyDiff:
@@ -23,6 +25,7 @@ class FamilyDiff:
     novel: bool
     changed_positions: list[int]
     samples_in: list[str]  # hex payloads inside the window
+    sample_changes: list[list[int]]  # changed positions per samples_in entry
     samples_out: list[str]  # baseline samples (up to 4)
 
     def to_dict(self) -> dict[str, Any]:
@@ -32,6 +35,7 @@ class FamilyDiff:
             "novel": self.novel,
             "changed_positions": self.changed_positions,
             "samples_in": self.samples_in,
+            "sample_changes": self.sample_changes,
             "samples_out": self.samples_out,
         }
 
@@ -56,9 +60,21 @@ def _byte_values(packets: list[Packet]) -> list[set[int]]:
     return values
 
 
-def _positions_changed(packets: list[Packet], baseline: list[set[int]]) -> list[int]:
-    """Byte positions where any in-window value leaves the baseline value set."""
-    return [i for i, values in enumerate(baseline) if any(p.payload[i] not in values for p in packets)]
+def _preview_indices(changes: list[set[int]], limit: int) -> list[int]:
+    """Pick packets covering every changed position first, then fill in arrival order."""
+    uncovered = set().union(*changes)
+    chosen: list[int] = []
+    while uncovered and len(chosen) < limit:
+        best = max(range(len(changes)), key=lambda k: (len(changes[k] & uncovered), -k))
+        chosen.append(best)
+        uncovered -= changes[best]
+    chosen_set = set(chosen)
+    for k in range(len(changes)):
+        if len(chosen) >= limit:
+            break
+        if k not in chosen_set:
+            chosen.append(k)
+    return chosen
 
 
 def diff_around_markers(
@@ -91,7 +107,9 @@ def diff_around_markers(
                 per_sig.setdefault(signature(p.payload, prefix_len), []).append(p)
         for sig, pkts in sorted(per_sig.items(), key=lambda kv: -len(kv[1])):
             base = baseline_by_sig.get(sig, [])
-            changed = _positions_changed(pkts, baseline_values.get(sig, []))
+            baseline = baseline_values.get(sig, [])
+            changes = [{i for i, values in enumerate(baseline) if p.payload[i] not in values} for p in pkts]
+            preview = _preview_indices(changes, MAX_PREVIEW_IN)
             novel = len(base) == 0
             # keep the interesting ones on top: novel > changed > rest
             md.hits.append(
@@ -99,8 +117,9 @@ def diff_around_markers(
                     sig=sig,
                     count_in=len(pkts),
                     novel=novel,
-                    changed_positions=changed,
-                    samples_in=[p.hex for p in pkts[:6]],
+                    changed_positions=sorted(set().union(*changes)),
+                    samples_in=[pkts[k].hex for k in preview],
+                    sample_changes=[sorted(changes[k]) for k in preview],
                     samples_out=[p.hex for p in base[:4]],
                 )
             )

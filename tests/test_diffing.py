@@ -76,3 +76,18 @@ def test_late_event_changes_are_detected_beyond_preview_samples():
         assert hit.changed_positions == [3]
         assert hit.count_in == 65
         assert len(hit.samples_in) == 6
+        assert hit.samples_in[0] == "F7 04 40 01"
+        assert hit.sample_changes == [[3], [], [], [], [], []]
+
+
+def test_preview_covers_each_changed_position():
+    packets = [mk_packet(T0, b"\xf7\x05\x40\x00\x00")]
+    packets.extend(mk_packet(T0 + 100 + i * 0.01, b"\xf7\x05\x40\x00\x00", seq=i + 1) for i in range(10))
+    packets.append(mk_packet(T0 + 100.5, b"\xf7\x05\x40\x00\x01", seq=20))
+    packets.append(mk_packet(T0 + 100.6, b"\xf7\x05\x40\x01\x00", seq=21))
+    packets.append(mk_packet(T0 + 100.7, b"\xf7\x05\x40\x01\x01", seq=22))
+    hit = diff_around_markers(packets, [Marker(id=1, ts=T0 + 100, label="event")])[0].hits[0]
+    assert hit.changed_positions == [3, 4]
+    assert hit.samples_in[0] == "F7 05 40 01 01"
+    assert hit.sample_changes[:2] == [[3, 4], []]
+    assert len(hit.samples_in) == len(hit.sample_changes) == 6

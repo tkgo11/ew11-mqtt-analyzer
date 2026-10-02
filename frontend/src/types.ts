@@ -82,6 +82,7 @@ export interface DiffHitDto {
   novel: boolean;
   changed_positions: number[];
   samples_in: string[];
+  sample_changes: number[][];
   samples_out: string[];
 }
 
