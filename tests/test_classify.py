@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from ew11_analyzer.classify import Marker, classify_family
 
 T0 = 1_000_000.0
@@ -61,3 +63,63 @@ def test_burst_family_mixed_or_event():
     ts = [T0 + 10.1, T0 + 10.3, T0 + 22.0, T0 + 22.4, T0 + 22.8, T0 + 45.0]
     v = classify_family("Z:6", ts, ["t"], markers=markers, start=T0, end=T0 + 60)
     assert v.verdict in {"MIXED", "IDLE", "EVENT"}
+
+
+@pytest.mark.parametrize("offset", [0, 10])
+def test_event_lift_clips_windows_to_capture(offset):
+    markers = [
+        Marker(id=1, ts=T0 + offset, label="edge"),
+        Marker(id=2, ts=T0 - 100, label="old"),
+        Marker(id=3, ts=T0 + 100, label="future"),
+    ]
+    v = classify_family(
+        "X:4", [T0 + t for t in [1, 3, 5, 9]], ["t"],
+        markers=markers, start=T0, end=T0 + 10, pre=2, post=2,
+    )
+    assert v.event_count == 1
+    assert v.baseline_count == 3
+    assert v.event_lift == pytest.approx((1 / 2) / (3 / 8))
+    assert v.marker_ids == [1]
+
+
+def test_overlapping_windows_count_exposure_and_packets_once():
+    markers = [Marker(id=1, ts=T0 + 2, label="a"), Marker(id=2, ts=T0 + 4, label="b")]
+    v = classify_family(
+        "X:4", [T0 + i + 0.5 for i in range(10)], ["t"],
+        markers=markers, start=T0, end=T0 + 10, pre=2, post=2,
+    )
+    assert v.event_count == 6
+    assert v.baseline_count == 4
+    assert v.event_lift == pytest.approx(1)
+
+
+@pytest.mark.parametrize("offsets", [[0.5], [0, 0.5, 1]])
+def test_no_baseline_exposure_is_unknown(offsets):
+    v = classify_family(
+        "X:4", [T0 + t for t in offsets], ["t"],
+        markers=[Marker(id=1, ts=T0, label="all")], start=T0, end=T0 + 1,
+    )
+    assert v.event_count == len(offsets)
+    assert v.baseline_count == 0
+    assert v.event_lift is None
+    assert v.verdict == "UNKNOWN"
+
+
+def test_zero_width_event_window_cannot_establish_lift():
+    v = classify_family(
+        "X:4", [T0 + 1], ["t"],
+        markers=[Marker(id=1, ts=T0 + 1, label="point")],
+        start=T0, end=T0 + 2, pre=0, post=0,
+    )
+    assert v.event_count == 1
+    assert v.event_lift is None
+    assert v.verdict == "UNKNOWN"
+
+
+def test_zero_duration_capture_does_not_invent_a_rate():
+    v = classify_family(
+        "X:4", [T0], ["t"], markers=[Marker(id=1, ts=T0, label="point")], start=T0, end=T0,
+    )
+    assert v.rate_per_min == 0
+    assert v.event_lift is None
+    assert v.verdict == "UNKNOWN"

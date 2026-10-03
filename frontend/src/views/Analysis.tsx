@@ -144,7 +144,7 @@ export function Analysis({ toast }: { toast: (m: string) => void }) {
                   <div className="samples" style={{ marginTop: 4 }}>
                     {h.samples_in.slice(0, 2).map((s, i) => (
                       <div className="row" key={i}>
-                        {hexWithDiff(s, h.changed_positions).map((b, j) => (
+                        {hexWithDiff(s, h.sample_changes[i] ?? []).map((b, j) => (
                           <span key={j} className={"b" + (b.changed ? " changed" : " same")}>
                             {b.text}
                           </span>

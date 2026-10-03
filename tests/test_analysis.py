@@ -57,3 +57,31 @@ def test_max_families_cap():
     result = run_analysis(pkts, [], max_families=5)
     assert len(result.families) <= 5
     assert result.total_families > 5
+
+
+def test_markers_outside_capture_do_not_change_duration_or_verdicts():
+    packets = _mixed_traffic()
+    expected = run_analysis(packets, [])
+    markers = [
+        Marker(id=1, ts=T0 - 86_400, label="old capture"),
+        Marker(id=2, ts=T0 + 86_400, label="later"),
+    ]
+    result = run_analysis(packets, markers)
+    assert result.started_at == expected.started_at
+    assert result.ended_at == expected.ended_at
+    assert [f.verdict for f in result.families] == [f.verdict for f in expected.families]
+    assert len(result.markers) == 2
+    assert all(not d.hits for d in result.diffs)
+
+
+def test_markers_without_packets_have_zero_duration():
+    result = run_analysis([], [Marker(id=1, ts=T0, label="empty")])
+    assert result.to_dict()["duration_s"] == 0
+    assert result.total_packets == 0
+
+
+def test_analysis_explains_missing_baseline():
+    packets = [mk_packet(T0 + i * 0.1, b"\xf7\x04\x40\x01", seq=i) for i in range(3)]
+    result = run_analysis(packets, [Marker(id=1, ts=T0, label="short capture")])
+    assert result.families[0].verdict["verdict"] == "UNKNOWN"
+    assert any("평상시" in note and "줄여" in note for note in result.notes)

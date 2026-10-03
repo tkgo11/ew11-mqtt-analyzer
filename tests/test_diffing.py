@@ -50,3 +50,44 @@ def test_multiple_markers():
     diffs = diff_around_markers(pkts, ms)
     assert len(diffs) == 2
     assert all(d.hits for d in diffs)  # baseline polls inside both windows
+
+
+def test_late_baseline_values_are_not_reported_as_event_changes():
+    packets = [mk_packet(T0 + i, b"\xf7\x04\x40\x00", seq=i) for i in range(64)]
+    packets.append(mk_packet(T0 + 64, b"\xf7\x04\x40\x01", seq=64))
+    packets.append(mk_packet(T0 + 100.1, b"\xf7\x04\x40\x01", seq=65))
+    marker = Marker(id=1, ts=T0 + 100, label="event")
+    for ordered in [packets, list(reversed(packets))]:
+        hit = diff_around_markers(ordered, [marker])[0].hits[0]
+        assert hit.changed_positions == []
+        assert not hit.novel
+        assert len(hit.samples_out) == 4
+
+
+def test_late_event_changes_are_detected_beyond_preview_samples():
+    packets = [mk_packet(T0, b"\xf7\x04\x40\x00")]
+    packets.extend(
+        mk_packet(T0 + 100 + i * 0.01, b"\xf7\x04\x40\x00", seq=i + 1) for i in range(64)
+    )
+    packets.append(mk_packet(T0 + 101, b"\xf7\x04\x40\x01", seq=65))
+    marker = Marker(id=1, ts=T0 + 100, label="event")
+    for ordered in [packets, list(reversed(packets))]:
+        hit = diff_around_markers(ordered, [marker])[0].hits[0]
+        assert hit.changed_positions == [3]
+        assert hit.count_in == 65
+        assert len(hit.samples_in) == 6
+        assert hit.samples_in[0] == "F7 04 40 01"
+        assert hit.sample_changes == [[3], [], [], [], [], []]
+
+
+def test_preview_covers_each_changed_position():
+    packets = [mk_packet(T0, b"\xf7\x05\x40\x00\x00")]
+    packets.extend(mk_packet(T0 + 100 + i * 0.01, b"\xf7\x05\x40\x00\x00", seq=i + 1) for i in range(10))
+    packets.append(mk_packet(T0 + 100.5, b"\xf7\x05\x40\x00\x01", seq=20))
+    packets.append(mk_packet(T0 + 100.6, b"\xf7\x05\x40\x01\x00", seq=21))
+    packets.append(mk_packet(T0 + 100.7, b"\xf7\x05\x40\x01\x01", seq=22))
+    hit = diff_around_markers(packets, [Marker(id=1, ts=T0 + 100, label="event")])[0].hits[0]
+    assert hit.changed_positions == [3, 4]
+    assert hit.samples_in[0] == "F7 05 40 01 01"
+    assert hit.sample_changes[:2] == [[3, 4], []]
+    assert len(hit.samples_in) == len(hit.sample_changes) == 6
