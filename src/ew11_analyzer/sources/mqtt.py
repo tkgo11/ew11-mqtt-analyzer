@@ -59,7 +59,7 @@ class MqttSource:
     def _handle_connect(
         self, client: mqtt.Client, userdata: Any, flags: Any, reason_code: Any, properties: Any
     ) -> None:
-        if int(reason_code) == 0:
+        if reason_code == 0:
             self._status("connected")
             client.subscribe(self.cfg.topic or "#")
         else:
