@@ -52,7 +52,7 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/dist
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "26"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: frontend/dist
@@ -93,7 +93,7 @@ jobs:
       - name: Run E2E
         working-directory: e2e
         run: npx playwright test
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report-${{ matrix.os }}
