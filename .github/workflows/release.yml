@@ -19,7 +19,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
         run: npm ci && npm run build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/dist
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.15"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: frontend/dist
@@ -59,7 +59,7 @@ jobs:
           cd dist
           mv ew11-analyzer "ew11-analyzer-${{ matrix.os }}"
           tar -czf "../ew11-analyzer-${{ matrix.os }}.tar.gz" "ew11-analyzer-${{ matrix.os }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.os }}
           path: |
@@ -71,7 +71,7 @@ jobs:
     needs: binaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: binary-*
           path: artifacts
